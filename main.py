@@ -1,5 +1,6 @@
 from config import *
 from functions import *
+from models import *
 
 if __name__ == '__main__':
     # Verificar dependencia crítica
@@ -11,31 +12,35 @@ if __name__ == '__main__':
     
     # 1) Actualizar dataset de entrenamiento
     try:
-        df_train = actualizar_dataset_entrenamiento(DATASET_DIR)
+        df_desenfoque, df_exposicion = actualizar_dataset_entrenamiento(TRAIN_DIR)
     except Exception as e:
         print(f"❌ Error actualizando dataset: {str(e)}")
         exit(1)
     
-    if df_train.empty:
-        print("❌ Error: Dataset de entrenamiento vacío")
+    # Verificar datasets
+    if df_desenfoque.empty and df_exposicion.empty:
+        print("❌ Error: Datasets de entrenamiento vacíos")
         exit()
     
-    # 2) Entrenar modelo si es necesario
-    debe_entrenar = not all(os.path.exists(p) for p in [MODELO_PATH, SCALER_PATH, FEATURES_PATH]) or ENTRENAR_NUEVO_MODELO
+    # 2) Entrenar modelos si es necesario
+    debe_entrenar = not all(os.path.exists(p) for p in [
+        MODELO_EXPOSICION_PATH, SCALER_EXPOSICION_PATH, FEATURES_EXPOSICION_PATH,
+        MODELO_DESENFOQUE_PATH, SCALER_DESENFOQUE_PATH, FEATURES_DESENFOQUE_PATH
+    ]) or ENTRENAR_NUEVO_MODELO
     
     if debe_entrenar:
-        print("🛠️  Entrenando modelo...")
+        print("🛠️  Entrenando modelos...")
         try:
-            entrenar_y_guardar_modelo(df_train)
+            entrenar_y_guardar_modelo(df_desenfoque)  # Entrena ambos modelos
         except Exception as e:
             print(f"❌ Error en entrenamiento: {str(e)}")
             exit(1)
     else:
-        print("✅ Modelo existente. No se necesita reentrenamiento")
+        print("✅ Modelos existentes. No se necesita reentrenamiento")
     
-    # 3) Cargar recursos del modelo
+    # 3) Cargar recursos de ambos modelos
     try:
-        modelo, scaler, feats = cargar_recursos_modelo()
+        recursos = cargar_recursos_modelos()
     except Exception as e:
         print(str(e))
         exit(1)
@@ -50,9 +55,9 @@ if __name__ == '__main__':
         print(f"📂 PROCESANDO DIRECTORIO: {TEST_DIR}")
         print(f"{'='*50}")
         
-        # 4.1 Predecir imágenes
+        # 4.1 Predecir imágenes con ambos modelos
         try:
-            procesar_imagenes_test(TEST_DIR, modelo, scaler, feats)
+            procesar_imagenes_test(TEST_DIR, recursos)
         except Exception as e:
             print(f"❌ Error procesando imágenes: {str(e)}")
             continue

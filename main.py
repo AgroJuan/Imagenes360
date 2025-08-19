@@ -1,6 +1,5 @@
-from .config.config import *
-from .functions.func import *
-from .functions.model import *
+from config import *
+from functions import *
 
 if __name__ == '__main__':
     # Verificar dependencia crítica

@@ -1,28 +1,21 @@
-import os, hashlib, cv2, pandas as pd, gc
-import py360convert
+import os, cv2, pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import py360convert
 from scipy.stats import entropy
 from tqdm import tqdm
 import multiprocessing
 import xgboost as xgb
-from models.desenfoque import *
-from models.exposicion import *
-from models.model import *
-from functions.func import *
+from models import *
+from functions import *
 from config import *
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-
+# %% TRAIN Y ML
 def procesar_imagenes_test(test_dir, recursos):
-    """
-    Procesa todas las imágenes nuevas en un directorio de test usando ambos modelos
-    y genera salida combinada con scoring final.
-    
-    recursos: diccionario con ambos modelos (de cargar_recursos_modelos())
-    """
+
     print(f"\n📂 Procesando: {test_dir}")
     CSV_PRED = os.path.join(test_dir, 'resultados_prediccion.csv')
     
@@ -42,7 +35,7 @@ def procesar_imagenes_test(test_dir, recursos):
     
     # Procesar imágenes
     archivos = [f for f in os.listdir(test_dir) 
-               if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+               if f.lower().endswith(('.jpg'))]
     
     # Filtrar imágenes ya procesadas
     if os.path.exists(CSV_PRED):
@@ -85,49 +78,59 @@ def predecir_cubemap_combinado(archivo, recursos, csv_path, lock, test_dir):
     try:
         img_path = os.path.join(test_dir, archivo)
         img = cv2.imread(img_path)
-        
         if img is None:
             print(f"❌ No se pudo leer: {archivo}")
             return
-        
-        # Extraer caras del cubemap (asumiendo que tienes esta función)
-        caras = extraer_caras_cubemap(img)
-        
+
+        # Convertir a cubemap (1024x1024 por cara)
+        cubemap = py360convert.e2c(img, face_w=1024, cube_format='list')
+        if not isinstance(cubemap, list) or len(cubemap) < 6:
+            raise ValueError(f"Conversión cubemap inválida para {archivo}, caras={len(cubemap)}")
+
+        caras_seleccionadas = cubemap[:4]  # Frontal, Derecha, Trasera, Izquierda
         resultados_caras = []
-        
-        for i, cara_img in enumerate(caras):
-            cara_nombre = FACE_NAMES[i]
-            
+
+        for cara_nombre, cara_img in zip(FACE_NAMES, caras_seleccionadas):
+
             # Extraer features para ambos modelos
             features_des = calcular_metricas_desenfoque(cara_img)
             features_exp = calcular_metricas_exposicion(cara_img)
-            
+
             # Preprocesar features
             features_des_array = np.array([features_des[feat] for feat in recursos['desenfoque']['features']])
             features_exp_array = np.array([features_exp[feat] for feat in recursos['exposicion']['features']])
-            
+
+            # Dentro de predecir_cubemap_combinado
+
             # Escalar
             features_des_scaled = recursos['desenfoque']['scaler'].transform([features_des_array])
             features_exp_scaled = recursos['exposicion']['scaler'].transform([features_exp_array])
-            
-            # Predecir
-            pred_des = recursos['desenfoque']['modelo'].predict(xgb.DMatrix(features_des_scaled))[0]
-            pred_exp = recursos['exposicion']['modelo'].predict(xgb.DMatrix(features_exp_scaled))[0]
-            
+
+            # Convertir a DataFrame con nombres de features
+            df_des = pd.DataFrame(features_des_scaled, columns=recursos['desenfoque']['features'])
+            df_exp = pd.DataFrame(features_exp_scaled, columns=recursos['exposicion']['features'])
+
+            # Predecir con nombres de features
+            d_des = xgb.DMatrix(df_des, feature_names=recursos['desenfoque']['features'])
+            d_exp = xgb.DMatrix(df_exp, feature_names=recursos['exposicion']['features'])
+
+            pred_des = recursos['desenfoque']['modelo'].predict(d_des)[0]
+            pred_exp = recursos['exposicion']['modelo'].predict(d_exp)[0]
+
             # Obtener clases predichas
             clase_des = np.argmax(pred_des)
             clase_exp = np.argmax(pred_exp)
-            
+
             # Convertir a nombres de clases
             nombres_clases_des = list(CLASES_DESENFOQUE.keys())
             nombres_clases_exp = list(CLASES_EXPOSICION.keys())
-            
+
             pred_nombre_des = nombres_clases_des[clase_des]
             pred_nombre_exp = nombres_clases_exp[clase_exp]
-            
+
             # Calcular score para esta cara
             score_cara = calcular_score_final(pred_nombre_des, pred_nombre_exp)
-            
+
             resultados_caras.append({
                 'cara': cara_nombre,
                 'pred_desenfoque': pred_nombre_des,
@@ -324,49 +327,6 @@ def analizar_resultados_csv(csv_pred_path, csv_rev_path,
     
     return df_out, df_out[df_out['revisar']]
 
-def extraer_caras_cubemap(imagen_cubemap):
-
-    height, width = imagen_cubemap.shape[:2]
-    
-    # Verificar que la imagen tiene el ratio esperado para 4 caras horizontales
-    # Ratio esperado: ancho = 4 * alto (para 4 caras cuadradas)
-    expected_ratio = 4/1  # 4 caras de ancho, 1 cara de alto
-    actual_ratio = width / height
-    
-    if not (3.8 <= actual_ratio <= 4.2):
-        print(f"⚠️  Ratio inesperado: {actual_ratio:.2f} (esperado ~4.0). Ajustando automáticamente.")
-    
-    # Calcular tamaño de cada cara (asumiendo que son cuadradas)
-    cara_size = height  # Como hay 1 fila de caras, el alto define el tamaño
-    
-    # Asegurarse de que el ancho es múltiplo de 4
-    if width % 4 != 0:
-        # Redimensionar para que sea divisible por 4
-        new_width = (width // 4) * 4
-        imagen_cubemap = cv2.resize(imagen_cubemap, (new_width, height))
-        width = new_width
-        cara_size = width // 4
-        print(f"⚠️  Imagen redimensionada a {width}x{height} para extracción precisa")
-    
-    # Extraer las 4 caras horizontales
-    caras = []
-    
-    # Orden de extracción: Izquierda, Frontal, Derecha, Trasera
-    for i in range(4):
-        x_start = i * cara_size
-        x_end = (i + 1) * cara_size
-        
-        cara = imagen_cubemap[0:height, x_start:x_end]
-        caras.append(cara)
-    
-    # Reordenar para el orden estándar: Frontal, Derecha, Trasera, Izquierda
-    # El extraction order es: [0:Izquierda, 1:Frontal, 2:Derecha, 3:Trasera]
-    # Queremos: [Frontal, Derecha, Trasera, Izquierda]
-    orden_correcto = [1, 2, 3, 0]  # Frontal, Derecha, Trasera, Izquierda
-    
-    caras_ordenadas = [caras[i] for i in orden_correcto]
-    
-    return caras_ordenadas
 # %% FUNCIONES DE GRAFICADO
 def plot_dataset_quality(df_all, output_dir):
     """
@@ -527,7 +487,7 @@ def plot_dataset_quality(df_all, output_dir):
             y='score_final', 
             data=df_all,
             palette=palette_desenfoque,
-            order=['borrosa', 'aceptable', 'nitida']
+            order=['borrosa', 'correcta', 'nitida']
         )
         plt.title("Distribución de Scores por Calidad de Desenfoque")
         plt.xlabel("Clasificación de desenfoque")

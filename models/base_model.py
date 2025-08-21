@@ -3,6 +3,8 @@ import xgboost as xgb
 from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import GridSearchCV
 import joblib
+import pandas as pd
+
 class BaseModel:
     def __init__(self, model_path, scaler_path, features_path):
         self.model_path = model_path
@@ -16,7 +18,8 @@ class BaseModel:
         """Preprocesamiento común"""
         X = df[features]
         y = df['clase']
-        X_scaled = self.scaler.fit_transform(X)
+        # Fit and transform using DataFrame to preserve feature names
+        X_scaled = pd.DataFrame(self.scaler.fit_transform(X), columns=features, index=X.index)
         return X_scaled, y
     
     def optimizar_hiperparametros(self, X, y):

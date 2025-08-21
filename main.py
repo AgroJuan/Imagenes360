@@ -1,6 +1,10 @@
-from config import *
-from functions import *
-from models import *
+from config.config import *
+from functions.func import *
+from models.model import *
+from functions.func import *
+import warnings
+
+warnings.filterwarnings("ignore", message="X does not have valid feature names, but RobustScaler was fitted with feature names")
 
 if __name__ == '__main__':
     # Verificar dependencia crítica
@@ -31,7 +35,10 @@ if __name__ == '__main__':
     if debe_entrenar:
         print("🛠️  Entrenando modelos...")
         try:
-            entrenar_y_guardar_modelo(df_desenfoque)  # Entrena ambos modelos
+            entrenar_y_guardar_modelo_des(df_desenfoque)
+            entrenar_y_guardar_modelo_exp(df_exposicion)
+            print("✅ Modelos entrenados y guardados exitosamente")
+            # Entrena ambos modelos
         except Exception as e:
             print(f"❌ Error en entrenamiento: {str(e)}")
             exit(1)

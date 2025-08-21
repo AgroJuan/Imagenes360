@@ -7,27 +7,25 @@ from config import *
 from models.desenfoque import *
 from models.exposicion import *
 
-def entrenar_y_guardar_modelo(df):
+def entrenar_y_guardar_modelo_exp(df):
     
     print("🎯 Entrenando modelo de exposición...")
     modelo_exposicion = ModeloExposicion()
     modelo_exposicion.entrenar(df)
     
+    return modelo_exposicion.model
+
+def entrenar_y_guardar_modelo_des(df):
     print("\n🎯 Entrenando modelo de desenfoque...")
     modelo_desenfoque = ModeloDesenfoque()
     modelo_desenfoque.entrenar(df)
     
-    return modelo_exposicion.model, modelo_desenfoque.model
+    return modelo_desenfoque.model
 
 def actualizar_dataset_entrenamiento(dataset_dir, guardar_csv=True):
-    # Configuración de clases - VALORES ACTUALIZADOS
-    CLASES_DESENFOQUE = {'borrosa': 0, 'aceptable': 1, 'nitida': 2}
-    CLASES_EXPOSICION = {'subexpuesta': 0, 'correcta': 1, 'sobrexpuesta': 0}
     
-    # Paths para los CSVs (sin cambios)
     CSV_DESENFOQUE_PATH = os.path.join(dataset_dir, 'dataset_desenfoque.csv')
     CSV_EXPOSICION_PATH = os.path.join(dataset_dir, 'dataset_exposicion.csv')
-    
     # Cargar datasets existentes o crear nuevos (sin cambios)
     if os.path.exists(CSV_DESENFOQUE_PATH):
         df_desenfoque_existente = pd.read_csv(CSV_DESENFOQUE_PATH)
@@ -60,10 +58,11 @@ def actualizar_dataset_entrenamiento(dataset_dir, guardar_csv=True):
     # Mapeo de carpetas a tipos de clase - VALORES ACTUALIZADOS
     CARPETAS_CLASES = {
         'borrosa': ('desenfoque', 0),      # Actualizado
-        'aceptable': ('ambos', 1),         # Actualizado
+        'aceptable': ('desenfoque', 1),    # Actualizado
         'nitida': ('desenfoque', 2),       # Actualizado
         'subexpuesta': ('exposicion', 0),  # Actualizado
-        'sobrexpuesta': ('exposicion', 0)  # Actualizado
+        'sobreexpuesta': ('exposicion', 0),
+        'correcta': ('exposicion', 1) # Actualizado
     }
     
     for carpeta_nombre in CARPETAS_CLASES.keys():
@@ -73,7 +72,7 @@ def actualizar_dataset_entrenamiento(dataset_dir, guardar_csv=True):
             continue
         
         archivos = [f for f in os.listdir(carpeta_dir) 
-                   if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                   if f.lower().endswith(('.jpg'))]
         
         print(f"📂 Verificando {len(archivos)} imágenes en {carpeta_nombre}...")
         
@@ -102,9 +101,9 @@ def actualizar_dataset_entrenamiento(dataset_dir, guardar_csv=True):
 
             try:
                 # Calcular métricas (sin cambios)
-                if tipo_clase in ['desenfoque', 'ambos']:
+                if tipo_clase in ['desenfoque']:
                     metricas = calcular_metricas_desenfoque(img)
-                elif tipo_clase in ['exposicion', 'ambos']:
+                elif tipo_clase in ['exposicion']:
                     metricas = calcular_metricas_exposicion(img)
                 
                 # Añadir metadatos (sin cambios)
